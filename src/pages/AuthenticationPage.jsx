@@ -204,6 +204,20 @@ const AuthenticationPage = () => {
             {isLoading ? "Processing..." : "Authenticate"}
           </button>
 
+          <div className="mt-4 space-y-3">
+            <div className="flex items-center gap-2 text-green-600">
+              <CheckCircle2 className="w-5 h-5" />
+              <p className="text-sm">
+                Look directly at the camera and stay still
+              </p>
+            </div>
+            <div className="flex items-center gap-2 text-green-600">
+              <CheckCircle2 className="w-5 h-5" />
+              <p className="text-sm">Ensure good lighting on your face</p>
+            </div>
+            <div className="flex items-center gap-2 text-red-600"></div>
+          </div>
+
           {/* Error Message */}
           {error && (
             <div className="mt-4 p-4 bg-red-50 border border-red-200 rounded-lg">

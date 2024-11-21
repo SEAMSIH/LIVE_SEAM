@@ -1,50 +1,48 @@
 import React, { useEffect, useState } from "react";
-import { useLocation } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { User, Mail, Phone, MapPin, Building } from "lucide-react";
 
 const ProfilePage = () => {
   const [userData, setUserData] = useState(null);
+  const [error, setError] = useState(null);
   const location = useLocation();
+  const navigate = useNavigate();
 
-  // Extract image name from location.state or any other source
-  const imageName = location.state?.image || "2.jpg"; // Fallback image name if not available
-
-  // Extract the ID from the image name (e.g., "1.jpg" becomes 1)
-  const userId = imageName.split(".")[0]; // This assumes the image is named like "1.jpg", "2.jpg", etc.
+  // Extract userId from location.state
+  const userId = location.state?.userId;
 
   useEffect(() => {
+    if (!userId) {
+      // If no userId is passed, redirect back to the AuthenticationPage
+      navigate("/project/workspace/src/pages/AuthenticationPage.jsx");
+      return;
+    }
+
+    // Fetch user data from dataset.json
     fetch("/public/web_model/dataset.json")
       .then((response) => response.json())
       .then((data) => {
-        // Find the user by ID (e.g., userId corresponds to the key "1", "2", etc.)
-        const user = data[userId]; // Directly access the user by ID
-        setUserData(
-          user || {
-            // Fallback user data if not found
-            name: "Default User",
-            email: "default@example.com",
-            phone: "+1 (555) 123-4567",
-            location: "Default Location",
-            department: "Default Department",
-            image: "/models/default.jpg", // Default image URL
-          }
-        );
+        // Find user data based on userId
+        const user = data[userId];
+        if (user) {
+          setUserData(user);
+        } else {
+          // Handle case where userId is not found in the dataset
+          setError("User not found.");
+        }
       })
-      .catch((error) => {
-        console.error("Error loading dataset.json:", error);
-        setUserData({
-          name: "Error",
-          email: "Error",
-          phone: "Error",
-          location: "Error",
-          department: "Error",
-          image: "https://via.placeholder.com/150",
-        });
+      .catch((err) => {
+        console.error("Error fetching dataset:", err);
+        setError("Failed to fetch user data.");
       });
-  }, [userId]); // Re-fetch when userId changes
+  }, [userId, navigate]);
 
-  if (!userData) {
+  if (!userData && !error) {
     return <div>Loading...</div>;
+  }
+
+  if (error) {
+    return <div className="text-center text-red-600 mt-20">{error}</div>;
   }
 
   return (
@@ -55,7 +53,7 @@ const ProfilePage = () => {
           <div className="relative h-48 bg-gradient-to-r from-blue-500 to-blue-600">
             <div className="absolute -bottom-20 left-1/2 transform -translate-x-1/2">
               <img
-                src={userData.image}
+                src={userData.image} // Use the matched user's image
                 alt={userData.name}
                 className="w-40 h-40 rounded-full border-4 border-white object-cover shadow-lg"
               />
