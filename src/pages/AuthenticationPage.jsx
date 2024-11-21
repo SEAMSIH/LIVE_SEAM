@@ -1,43 +1,43 @@
 import React, { useState, useCallback, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import Webcam from "react-webcam";
-import { CheckCircle2, AlertCircle, Scan, Camera } from "lucide-react";
+import { CheckCircle2, AlertCircle, Camera } from "lucide-react";
 import LoadingSpinner from "../components/LoadingSpinner";
 import {
-  loadModels,
-  performLivenessDetection,
-  findBestMatch,
+  loadDeepIDModel,
+  getDeepIDFaceDescriptor,
+  compareDescriptors,
 } from "../utils/faceUtils";
 
 const AuthenticationPage = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [modelsLoaded, setModelsLoaded] = useState(false);
+  const [modelLoaded, setModelLoaded] = useState(false);
   const webcamRef = useRef(null);
   const navigate = useNavigate();
 
   useEffect(() => {
-    const initializeModels = async () => {
+    const initializeModel = async () => {
       try {
-        const loaded = await loadModels();
+        const loaded = await loadDeepIDModel();
         if (loaded) {
-          setModelsLoaded(true);
+          setModelLoaded(true);
         } else {
-          setError("Failed to load AI models");
+          setError("Failed to load DeepID model");
         }
       } catch (err) {
-        setError("Error initializing face detection models");
+        setError("Error initializing DeepID model");
       } finally {
         setIsLoading(false);
       }
     };
 
-    initializeModels();
+    initializeModel();
   }, []);
 
   const handleAuthenticate = useCallback(async () => {
-    if (!modelsLoaded) {
-      setError("AI models not loaded. Please wait or refresh the page.");
+    if (!modelLoaded) {
+      setError("DeepID model not loaded. Please wait or refresh the page.");
       return;
     }
 
@@ -45,47 +45,57 @@ const AuthenticationPage = () => {
       setIsLoading(true);
       setError(null);
 
-      // Capture image from webcam
+      // Step 1: Capture image from webcam
       const imageSrc = webcamRef.current?.getScreenshot();
       if (!imageSrc) throw new Error("Failed to capture image");
 
-      // Create an image element for processing
-      const img = new Image();
-      img.src = imageSrc;
-      await img.decode();
+      // Create an image element for processing the webcam capture
+      const userImage = new Image();
+      userImage.src = imageSrc;
+      await userImage.decode();
 
-      // Perform liveness detection
-      const isLive = await performLivenessDetection(img);
-      if (!isLive) {
-        throw new Error(
-          "Liveness check failed. Please ensure you are a real person and try again."
-        );
+      // Generate face descriptor for the webcam image
+      const userDescriptor = await getDeepIDFaceDescriptor(userImage);
+      if (!userDescriptor) {
+        throw new Error("Failed to generate face descriptor for webcam image");
       }
 
-      // Find best match from dataset
-      const match = await findBestMatch(img, "/dataset");
+      // Step 2: Load the dataset image
+      const datasetImage = new Image();
+      datasetImage.src = "/public/dataset/3.jpg"; // Relative path to the dataset image
+      await datasetImage.decode();
 
-      if (match.distance > 0.6) {
+      // Generate face descriptor for the dataset image
+      const datasetDescriptor = await getDeepIDFaceDescriptor(datasetImage);
+      if (!datasetDescriptor) {
+        throw new Error("Failed to generate face descriptor for dataset image");
+      }
+
+      // Step 3: Compare descriptors
+      const distance = compareDescriptors(userDescriptor, datasetDescriptor);
+
+      // Step 4: Check if the distance is within the threshold
+      if (distance > 200) {
         throw new Error("No matching profile found. Access denied.");
       }
 
-      // Navigate to profile page with matched user ID
-      navigate(`/profile/${match.label}`);
+      // Navigate to the success page if the match is successful
+      navigate(`/profile/success`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Authentication failed");
     } finally {
       setIsLoading(false);
     }
-  }, [navigate, modelsLoaded]);
+  }, [navigate, modelLoaded]);
 
   return (
     <div className="min-h-screen bg-white text-gray-900">
       <div className="container mx-auto px-4 py-8 flex flex-col items-center">
         {/* Header Section */}
-        <div className="flex items-center justify-center gap-12 mb-6">
-          <img src="/logos/logo1.png" alt="Logo 1" className="h-16 w-auto" />
-          <img src="/logos/logo2.png" alt="Logo 2" className="h-16 w-auto" />
-          <img src="/logos/logo3.png" alt="Logo 3" className="h-16 w-auto" />
+        <div className="flex items-center justify-center gap-20 mb-10">
+          <img src="/logos/logo1.png" alt="Logo 1" className="h-24 w-auto" />
+          <img src="/logos/logo2.png" alt="Logo 2" className="h-24 w-auto" />
+          <img src="/logos/logo3.png" alt="Logo 3" className="h-24 w-auto" />
         </div>
         <h1 className="text-lg md:text-xl font-semibold text-center mb-6">
           Secure Encryption and Authentication Model
@@ -112,18 +122,18 @@ const AuthenticationPage = () => {
           <div className="mb-4 flex items-center justify-center gap-2">
             <div
               className={`w-3 h-3 rounded-full ${
-                modelsLoaded ? "bg-green-500" : "bg-red-500"
+                modelLoaded ? "bg-green-500" : "bg-red-500"
               }`}
             />
             <span className="text-sm text-gray-600">
-              {modelsLoaded ? "AI Models Ready" : "Loading AI Models..."}
+              {modelLoaded ? "DeepID Model Ready" : "Loading DeepID Model..."}
             </span>
           </div>
 
           {/* Action Button */}
           <button
             onClick={handleAuthenticate}
-            disabled={isLoading || !modelsLoaded}
+            disabled={isLoading || !modelLoaded}
             className="w-full py-3 px-6 bg-green-600 hover:bg-green-700 disabled:bg-green-300 
                      text-white disabled:cursor-not-allowed rounded-xl font-semibold 
                      transition-colors shadow-lg hover:shadow-xl disabled:shadow-none
@@ -145,12 +155,7 @@ const AuthenticationPage = () => {
               <CheckCircle2 className="w-5 h-5" />
               <p className="text-sm">Ensure good lighting on your face</p>
             </div>
-            <div className="flex items-center gap-2 text-red-600">
-              <AlertCircle className="w-5 h-5" />
-              <p className="text-sm">
-                Remove any face coverings or accessories
-              </p>
-            </div>
+            <div className="flex items-center gap-2 text-red-600"></div>
           </div>
 
           {/* Error Message */}
