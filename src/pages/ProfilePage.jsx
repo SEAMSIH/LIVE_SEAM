@@ -1,20 +1,51 @@
-import React from "react";
-import { useParams, useLocation } from "react-router-dom";
+import React, { useEffect, useState } from "react";
+import { useLocation } from "react-router-dom";
 import { User, Mail, Phone, MapPin, Building } from "lucide-react";
 
 const ProfilePage = () => {
-  const { id } = useParams();
+  const [userData, setUserData] = useState(null);
   const location = useLocation();
-  const userData = {
-    name: "Sarah Johnson",
-    email: "sarah.johnson@example.com",
-    phone: "+1 (555) 123-4567",
-    location: "San Francisco, CA",
-    department: "Engineering",
-    image:
-      location.state?.image ||
-      "https://images.unsplash.com/photo-1494790108377-be9c29b29330?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=1000&q=80",
-  };
+
+  // Extract image name from location.state or any other source
+  const imageName = location.state?.image || "2.jpg"; // Fallback image name if not available
+
+  // Extract the ID from the image name (e.g., "1.jpg" becomes 1)
+  const userId = imageName.split(".")[0]; // This assumes the image is named like "1.jpg", "2.jpg", etc.
+
+  useEffect(() => {
+    fetch("/public/web_model/dataset.json")
+      .then((response) => response.json())
+      .then((data) => {
+        // Find the user by ID (e.g., userId corresponds to the key "1", "2", etc.)
+        const user = data[userId]; // Directly access the user by ID
+        setUserData(
+          user || {
+            // Fallback user data if not found
+            name: "Default User",
+            email: "default@example.com",
+            phone: "+1 (555) 123-4567",
+            location: "Default Location",
+            department: "Default Department",
+            image: "/models/default.jpg", // Default image URL
+          }
+        );
+      })
+      .catch((error) => {
+        console.error("Error loading dataset.json:", error);
+        setUserData({
+          name: "Error",
+          email: "Error",
+          phone: "Error",
+          location: "Error",
+          department: "Error",
+          image: "https://via.placeholder.com/150",
+        });
+      });
+  }, [userId]); // Re-fetch when userId changes
+
+  if (!userData) {
+    return <div>Loading...</div>;
+  }
 
   return (
     <div className="min-h-screen bg-white text-gray-900 py-12 px-4">
@@ -36,7 +67,9 @@ const ProfilePage = () => {
             <h1 className="text-3xl font-bold text-center mb-2">
               {userData.name}
             </h1>
-            <p className="text-gray-500 text-center mb-8">Employee ID: {id}</p>
+            <p className="text-gray-500 text-center mb-8">
+              Employee ID: {userId}
+            </p>
 
             <div className="space-y-4 max-w-lg mx-auto">
               <div className="flex items-center space-x-4 p-4 bg-gray-50 rounded-xl border border-gray-200">
