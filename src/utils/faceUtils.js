@@ -1,15 +1,19 @@
 import * as tf from "@tensorflow/tfjs";
+import { LambdaLayer } from "./LambdaLayer"; // Ensure this path is correct
+
+// Register the custom LambdaLayer class
+tf.serialization.registerClass(LambdaLayer);
 
 let deepIDModel = null;
 
 /**
- * Load the DeepID model
+ * Load the DeepID model and clear cache
  * @returns {Promise<boolean>} - Resolves to true if the model loads successfully, otherwise false
  */
 export const loadDeepIDModel = async () => {
   try {
     // Load the DeepID model from the specified path
-    deepIDModel = await tf.loadLayersModel("/public/web_model/model.json");
+    deepIDModel = await tf.loadLayersModel("/public/web_model1/model.json");
     console.log("DeepID model loaded successfully");
     return true;
   } catch (error) {
@@ -34,7 +38,7 @@ export const getDeepIDFaceDescriptor = async (inputImage) => {
       () =>
         tf.browser
           .fromPixels(inputImage)
-          .resizeNearestNeighbor([55, 47]) // Match DeepID input size
+          .resizeNearestNeighbor([96, 96]) // Match DeepID input size
           .toFloat()
           .expandDims(0)
           .div(255.0) // Normalize pixel values

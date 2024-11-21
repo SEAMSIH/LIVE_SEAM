@@ -62,7 +62,7 @@ const AuthenticationPage = () => {
 
       // Step 2: Load the dataset image
       const datasetImage = new Image();
-      datasetImage.src = "/public/dataset/3.jpg"; // Relative path to the dataset image
+      datasetImage.src = "/public/dataset/1.jpg"; // Relative path to the dataset image
       await datasetImage.decode();
 
       // Generate face descriptor for the dataset image
@@ -75,7 +75,7 @@ const AuthenticationPage = () => {
       const distance = compareDescriptors(userDescriptor, datasetDescriptor);
 
       // Step 4: Check if the distance is within the threshold
-      if (distance > 200) {
+      if (distance > 0.3) {
         throw new Error("No matching profile found. Access denied.");
       }
 
