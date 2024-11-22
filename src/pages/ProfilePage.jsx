@@ -1,18 +1,17 @@
-import React from 'react';
-import { useParams } from 'react-router-dom';
-import { User, Mail, Phone, MapPin, Building } from 'lucide-react';
+import React from "react";
+import { useParams, useLocation } from "react-router-dom";
+import { User, Mail, Phone, MapPin, Building } from "lucide-react";
 
 const ProfilePage = () => {
   const { id } = useParams();
-
-  // Simulated user data
+  const location = useLocation();
   const userData = {
-    name: 'Sarah Johnson',
-    email: 'sarah.johnson@example.com',
-    phone: '+1 (555) 123-4567',
-    location: 'San Francisco, CA',
-    department: 'Engineering',
-    image: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=1000&q=80'
+    name: "Ajay C",
+    email: "23b107@psgitech.ac.in",
+    phone: "9943457438",
+    location: "Coimbatore,Tamil Nadu",
+    department: "Engineering",
+    image: location.state?.image || "/public/dataset/2.jpg",
   };
 
   return (
@@ -32,7 +31,9 @@ const ProfilePage = () => {
 
           {/* Profile Content */}
           <div className="pt-24 pb-8 px-8">
-            <h1 className="text-3xl font-bold text-center mb-2">{userData.name}</h1>
+            <h1 className="text-3xl font-bold text-center mb-2">
+              {userData.name}
+            </h1>
             <p className="text-gray-500 text-center mb-8">Employee ID: {id}</p>
 
             <div className="space-y-4 max-w-lg mx-auto">

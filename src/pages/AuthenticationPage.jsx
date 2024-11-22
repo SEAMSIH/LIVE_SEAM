@@ -1,32 +1,49 @@
 import React, { useState, useCallback, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import Webcam from "react-webcam";
-import { CheckCircle2, AlertCircle, Scan, Camera } from "lucide-react";
+import { CheckCircle2, AlertCircle, Camera } from "lucide-react";
 import LoadingSpinner from "../components/LoadingSpinner";
+import * as faceDetection from "@tensorflow-models/face-detection";
+import * as tf from "@tensorflow/tfjs";
 import {
-  loadModels,
-  performLivenessDetection,
-  findBestMatch,
+  loadDeepIDModel,
+  getDeepIDFaceDescriptor,
+  compareDescriptors,
 } from "../utils/faceUtils";
 
 const AuthenticationPage = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [modelsLoaded, setModelsLoaded] = useState(false);
+  const [modelLoaded, setModelLoaded] = useState(false);
+  const [faceDetector, setFaceDetector] = useState(null);
+  const [multipleFacesDetected, setMultipleFacesDetected] = useState(false);
   const webcamRef = useRef(null);
   const navigate = useNavigate();
 
+  // Load models and initialize face detection
   useEffect(() => {
     const initializeModels = async () => {
       try {
-        const loaded = await loadModels();
-        if (loaded) {
-          setModelsLoaded(true);
+        // Load DeepID model
+        const deepIDLoaded = await loadDeepIDModel();
+
+        // Load face detection model
+        const faceDetectorModel = await faceDetection.createDetector(
+          faceDetection.SupportedModels.MediaPipeFaceDetector,
+          {
+            runtime: "tfjs",
+            maxFaces: 5, // Detect up to 5 faces
+          }
+        );
+
+        if (deepIDLoaded && faceDetectorModel) {
+          setModelLoaded(true);
+          setFaceDetector(faceDetectorModel);
         } else {
-          setError("Failed to load AI models");
+          setError("Failed to load models.");
         }
       } catch (err) {
-        setError("Error initializing face detection models");
+        setError("Error initializing models.");
       } finally {
         setIsLoading(false);
       }
@@ -35,9 +52,39 @@ const AuthenticationPage = () => {
     initializeModels();
   }, []);
 
+  // Monitor the webcam feed for faces
+  useEffect(() => {
+    const detectFaces = async () => {
+      if (webcamRef.current && faceDetector) {
+        const video = webcamRef.current.video;
+
+        if (video.readyState === 4) {
+          // Detect faces in the webcam feed
+          const faces = await faceDetector.estimateFaces(video, {
+            flipHorizontal: false,
+          });
+
+          // Check if multiple faces are detected (2 or more)
+          setMultipleFacesDetected(faces.length >= 2);
+        }
+      }
+    };
+
+    const intervalId = setInterval(detectFaces, 500); // Run detection every 500ms
+    return () => clearInterval(intervalId);
+  }, [faceDetector]);
+
+  // Handle face authentication
   const handleAuthenticate = useCallback(async () => {
-    if (!modelsLoaded) {
-      setError("AI models not loaded. Please wait or refresh the page.");
+    if (!modelLoaded) {
+      setError("Models not fully loaded. Please wait.");
+      return;
+    }
+
+    if (multipleFacesDetected) {
+      setError(
+        "Multiple faces detected. Please ensure only one face is in the frame."
+      );
       return;
     }
 
@@ -45,47 +92,63 @@ const AuthenticationPage = () => {
       setIsLoading(true);
       setError(null);
 
-      // Capture image from webcam
+      // Step 1: Capture image from webcam
       const imageSrc = webcamRef.current?.getScreenshot();
-      if (!imageSrc) throw new Error("Failed to capture image");
+      if (!imageSrc)
+        throw new Error("Failed to capture an image from the webcam.");
 
-      // Create an image element for processing
-      const img = new Image();
-      img.src = imageSrc;
-      await img.decode();
+      // Create an image element for processing the webcam capture
+      const userImage = new Image();
+      userImage.src = imageSrc;
+      await userImage.decode();
 
-      // Perform liveness detection
-      const isLive = await performLivenessDetection(img);
-      if (!isLive) {
+      // Generate face descriptor for the captured image
+      const userDescriptor = await getDeepIDFaceDescriptor(userImage);
+      if (!userDescriptor) {
         throw new Error(
-          "Liveness check failed. Please ensure you are a real person and try again."
+          "Failed to generate a face descriptor for the captured image."
         );
       }
 
-      // Find best match from dataset
-      const match = await findBestMatch(img, "/dataset");
+      // Step 2: Load a dataset image
+      const datasetImagePath = "/dataset/3.jpg"; // Change to the desired path
+      const datasetImage = new Image();
+      datasetImage.src = datasetImagePath;
+      await datasetImage.decode();
 
-      if (match.distance > 0.6) {
+      // Generate face descriptor for the dataset image
+      const datasetDescriptor = await getDeepIDFaceDescriptor(datasetImage);
+      if (!datasetDescriptor) {
+        throw new Error(
+          "Failed to generate a face descriptor for the dataset image."
+        );
+      }
+
+      // Step 3: Compare face descriptors
+      const distance = compareDescriptors(userDescriptor, datasetDescriptor);
+
+      // Step 4: Verify if the match is within the acceptable threshold
+      if (distance > 300) {
         throw new Error("No matching profile found. Access denied.");
       }
 
-      // Navigate to profile page with matched user ID
-      navigate(`/profile/${match.label}`);
+      // Navigate to the profile page on successful authentication
+      navigate(`/profile/3`); // Replace "3" with a dynamic ID if needed
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Authentication failed");
+      setError(err.message || "Authentication failed.");
     } finally {
       setIsLoading(false);
     }
-  }, [navigate, modelsLoaded]);
+  }, [navigate, modelLoaded, multipleFacesDetected]);
 
   return (
     <div className="min-h-screen bg-white text-gray-900">
       <div className="container mx-auto px-4 py-8 flex flex-col items-center">
         {/* Header Section */}
-        <div className="flex items-center justify-center gap-12 mb-6">
-          <img src="/logos/logo1.png" alt="Logo 1" className="h-16 w-auto" />
-          <img src="/logos/logo2.png" alt="Logo 2" className="h-16 w-auto" />
-          <img src="/logos/logo3.png" alt="Logo 3" className="h-16 w-auto" />
+        <div className="flex items-center justify-center gap-20 mb-10">
+          <img src="/logos/logo1.png" alt="Logo 1" className="h-24 w-auto" />
+          <img src="/logos/logo2.png" alt="Logo 2" className="h-24 w-auto" />
+          <img src="/logos/logo3.png" alt="Logo 3" className="h-24 w-auto" />
         </div>
         <h1 className="text-lg md:text-xl font-semibold text-center mb-6">
           Secure Encryption and Authentication Model
@@ -112,18 +175,26 @@ const AuthenticationPage = () => {
           <div className="mb-4 flex items-center justify-center gap-2">
             <div
               className={`w-3 h-3 rounded-full ${
-                modelsLoaded ? "bg-green-500" : "bg-red-500"
+                modelLoaded
+                  ? multipleFacesDetected
+                    ? "bg-red-500"
+                    : "bg-green-500"
+                  : "bg-gray-500"
               }`}
             />
             <span className="text-sm text-gray-600">
-              {modelsLoaded ? "AI Models Ready" : "Loading AI Models..."}
+              {modelLoaded
+                ? multipleFacesDetected
+                  ? "Multiple Faces Detected"
+                  : "DeepID Model Ready"
+                : "Loading Models..."}
             </span>
           </div>
 
           {/* Action Button */}
           <button
             onClick={handleAuthenticate}
-            disabled={isLoading || !modelsLoaded}
+            disabled={isLoading || !modelLoaded || multipleFacesDetected}
             className="w-full py-3 px-6 bg-green-600 hover:bg-green-700 disabled:bg-green-300 
                      text-white disabled:cursor-not-allowed rounded-xl font-semibold 
                      transition-colors shadow-lg hover:shadow-xl disabled:shadow-none
@@ -133,7 +204,6 @@ const AuthenticationPage = () => {
             {isLoading ? "Processing..." : "Authenticate"}
           </button>
 
-          {/* Guidelines */}
           <div className="mt-4 space-y-3">
             <div className="flex items-center gap-2 text-green-600">
               <CheckCircle2 className="w-5 h-5" />
@@ -145,12 +215,7 @@ const AuthenticationPage = () => {
               <CheckCircle2 className="w-5 h-5" />
               <p className="text-sm">Ensure good lighting on your face</p>
             </div>
-            <div className="flex items-center gap-2 text-red-600">
-              <AlertCircle className="w-5 h-5" />
-              <p className="text-sm">
-                Remove any face coverings or accessories
-              </p>
-            </div>
+            <div className="flex items-center gap-2 text-red-600"></div>
           </div>
 
           {/* Error Message */}
@@ -162,11 +227,6 @@ const AuthenticationPage = () => {
               </div>
             </div>
           )}
-        </div>
-
-        {/* Footer */}
-        <div className="text-center mt-6 text-gray-500 text-sm">
-          © SEAM Authentication System 2024. All rights reserved.
         </div>
       </div>
     </div>
