@@ -1,50 +1,41 @@
 import express from "express";
-import cors from "cors";
+import fs from "fs/promises"; // Use promises for fs
 import path from "path";
 import { fileURLToPath } from "url";
 
-// Resolve __dirname for ES modules
+const app = express();
+const PORT = 3000;
+
+// Get the __dirname equivalent in ES module
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const app = express();
-const PORT = 1234;
+// Middleware for serving static files
+app.use(express.static(path.join(__dirname, "public")));
 
-// Enable CORS for all origins
-app.use(cors({ origin: "*" }));
+// Endpoint to fetch dataset image paths
+app.get("/api/dataset", async (req, res) => {
+  const datasetDirectory = path.join(__dirname, "public", "dataset");
 
-// Middleware to serve static files from the web_model directory
-app.use(
-  "/project/workspace/web_model",
-  express.static(path.join(__dirname, "web_model"), {
-    setHeaders: (res, filePath) => {
-      // Set Cache-Control for better caching in service workers
-      res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
-    },
-  })
-);
+  try {
+    // Read all image file names from the dataset directory
+    const files = await fs.readdir(datasetDirectory);
 
-// Root route for server testing
+    // Filter only image files (jpg, png, etc.)
+    const imagePaths = files
+      .filter((file) => /\.(jpg|jpeg|png|gif)$/i.test(file))
+      .map((file) => `/dataset/${file}`);
+
+    res.json(imagePaths);
+  } catch (err) {
+    console.error("Error reading dataset directory:", err);
+    res.status(500).json({ error: "Failed to read dataset" });
+  }
+});
+
+// Serve a default page for the root path
 app.get("/", (req, res) => {
-  res.send(
-    "Server is running. Model is available at /project/workspace/web_model/model.json"
-  );
-});
-
-// Route to test loading the model.json file
-app.get("/test-model", (req, res) => {
-  const modelPath = path.join(__dirname, "web_model", "model.json");
-  res.sendFile(modelPath, (err) => {
-    if (err) {
-      console.error("Error sending model.json:", err);
-      res.status(404).send("Model file not found");
-    }
-  });
-});
-
-// Catch-all route to handle unsupported routes
-app.use((req, res) => {
-  res.status(404).send("Route not found. Please check your URL.");
+  res.sendFile(path.join(__dirname, "index.html"));
 });
 
 // Start the server
