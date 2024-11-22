@@ -1,233 +1,119 @@
 import React, { useState, useCallback, useRef, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
 import Webcam from "react-webcam";
-import { CheckCircle2, AlertCircle, Camera } from "lucide-react";
-import LoadingSpinner from "../components/LoadingSpinner";
-import * as faceDetection from "@tensorflow-models/face-detection";
-import * as tf from "@tensorflow/tfjs";
+import { useNavigate } from "react-router-dom";
 import {
   loadDeepIDModel,
   getDeepIDFaceDescriptor,
   compareDescriptors,
 } from "../utils/faceUtils";
+import LoadingSpinner from "../components/LoadingSpinner";
 
 const AuthenticationPage = () => {
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
   const [modelLoaded, setModelLoaded] = useState(false);
-  const [faceDetector, setFaceDetector] = useState(null);
-  const [multipleFacesDetected, setMultipleFacesDetected] = useState(false);
   const webcamRef = useRef(null);
   const navigate = useNavigate();
 
-  // Load models and initialize face detection
   useEffect(() => {
-    const initializeModels = async () => {
+    const initializeModel = async () => {
       try {
-        // Load DeepID model
-        const deepIDLoaded = await loadDeepIDModel();
-
-        // Load face detection model
-        const faceDetectorModel = await faceDetection.createDetector(
-          faceDetection.SupportedModels.MediaPipeFaceDetector,
-          {
-            runtime: "tfjs",
-            maxFaces: 5, // Detect up to 5 faces
-          }
-        );
-
-        if (deepIDLoaded && faceDetectorModel) {
-          setModelLoaded(true);
-          setFaceDetector(faceDetectorModel);
-        } else {
-          setError("Failed to load models.");
-        }
+        await loadDeepIDModel();
+        setModelLoaded(true);
       } catch (err) {
-        setError("Error initializing models.");
-      } finally {
-        setIsLoading(false);
+        setError("Error loading DeepID model");
       }
     };
-
-    initializeModels();
+    initializeModel();
   }, []);
 
-  // Monitor the webcam feed for faces
-  useEffect(() => {
-    const detectFaces = async () => {
-      if (webcamRef.current && faceDetector) {
-        const video = webcamRef.current.video;
-
-        if (video.readyState === 4) {
-          // Detect faces in the webcam feed
-          const faces = await faceDetector.estimateFaces(video, {
-            flipHorizontal: false,
-          });
-
-          // Check if multiple faces are detected (2 or more)
-          setMultipleFacesDetected(faces.length >= 2);
-        }
-      }
-    };
-
-    const intervalId = setInterval(detectFaces, 500); // Run detection every 500ms
-    return () => clearInterval(intervalId);
-  }, [faceDetector]);
-
-  // Handle face authentication
   const handleAuthenticate = useCallback(async () => {
     if (!modelLoaded) {
-      setError("Models not fully loaded. Please wait.");
+      setError("Model not loaded. Please wait.");
       return;
     }
 
-    if (multipleFacesDetected) {
-      setError(
-        "Multiple faces detected. Please ensure only one face is in the frame."
-      );
-      return;
-    }
+    setIsLoading(true);
+    setError(null);
 
     try {
-      setIsLoading(true);
-      setError(null);
-
       // Step 1: Capture image from webcam
       const imageSrc = webcamRef.current?.getScreenshot();
-      if (!imageSrc)
-        throw new Error("Failed to capture an image from the webcam.");
+      if (!imageSrc) throw new Error("Failed to capture image");
 
-      // Create an image element for processing the webcam capture
-      const userImage = new Image();
-      userImage.src = imageSrc;
-      await userImage.decode();
+      // Convert captured image to a Blob or Base64
+      const capturedImage = new Image();
+      capturedImage.src = imageSrc;
+      await capturedImage.decode();
 
-      // Generate face descriptor for the captured image
-      const userDescriptor = await getDeepIDFaceDescriptor(userImage);
-      if (!userDescriptor) {
-        throw new Error(
-          "Failed to generate a face descriptor for the captured image."
-        );
+      const userDescriptor = await getDeepIDFaceDescriptor(capturedImage);
+      if (!userDescriptor)
+        throw new Error("Failed to generate descriptor for captured image");
+
+      // Step 2: Compare with all dataset images
+      const datasetDescriptors = [];
+      const datasetImages = [
+        "/public/dataset/1.jpg",
+        "/public/dataset/2.jpg",
+        "/public/dataset/3.jpg",
+        "/public/dataset/4.jpg",
+        "/public/dataset/5.jpg",
+        "/public/dataset/6.jpg",
+        // Add more dataset images here
+      ];
+
+      for (const imagePath of datasetImages) {
+        const datasetImage = new Image();
+        datasetImage.src = imagePath;
+        await datasetImage.decode();
+
+        const descriptor = await getDeepIDFaceDescriptor(datasetImage);
+        if (descriptor) {
+          datasetDescriptors.push({ imagePath, descriptor });
+        }
       }
 
-      // Step 2: Load a dataset image
-      const datasetImagePath = "/public/dataset/3.jpg"; // Change to the desired path
-      const datasetImage = new Image();
-      datasetImage.src = datasetImagePath;
-      await datasetImage.decode();
+      // Step 3: Find the best match
+      let bestMatch = null;
+      let minDistance = Infinity;
 
-      // Generate face descriptor for the dataset image
-      const datasetDescriptor = await getDeepIDFaceDescriptor(datasetImage);
-      if (!datasetDescriptor) {
-        throw new Error(
-          "Failed to generate a face descriptor for the dataset image."
-        );
-      }
+      datasetDescriptors.forEach(({ imagePath, descriptor }) => {
+        const distance = compareDescriptors(userDescriptor, descriptor);
+        if (distance < minDistance) {
+          minDistance = distance;
+          bestMatch = imagePath;
+        }
+      });
 
-      // Step 3: Compare face descriptors
-      const distance = compareDescriptors(userDescriptor, datasetDescriptor);
+      if (minDistance > 2) throw new Error("No matching profile found");
 
-      // Step 4: Verify if the match is within the acceptable threshold
-      if (distance > 200) {
-        throw new Error("No matching profile found. Access denied.");
-      }
-
-      // Navigate to the profile page on successful authentication
-      navigate(`/profile/3`); // Replace "3" with a dynamic ID if needed
+      // Step 4: Navigate to the profile page with the matched image
+      const matchedImageName = bestMatch.split("/").pop();
+      navigate(`/profile/:id`, { state: { image: matchedImageName } });
     } catch (err) {
-      setError(err.message || "Authentication failed.");
+      setError(err.message || "Authentication failed");
     } finally {
       setIsLoading(false);
     }
-  }, [navigate, modelLoaded, multipleFacesDetected]);
+  }, [modelLoaded, navigate]);
 
   return (
     <div className="min-h-screen bg-white text-gray-900">
       <div className="container mx-auto px-4 py-8 flex flex-col items-center">
-        {/* Header Section */}
-        <div className="flex items-center justify-center gap-20 mb-10">
-          <img src="/logos/logo1.png" alt="Logo 1" className="h-24 w-auto" />
-          <img src="/logos/logo2.png" alt="Logo 2" className="h-24 w-auto" />
-          <img src="/logos/logo3.png" alt="Logo 3" className="h-24 w-auto" />
-        </div>
-        <h1 className="text-lg md:text-xl font-semibold text-center mb-6">
-          Secure Encryption and Authentication Model
-        </h1>
-
-        {/* Main Content */}
-        <div className="max-w-xl w-full bg-gray-50 rounded-2xl p-6 shadow-lg border border-gray-200">
-          {/* Webcam Container */}
-          <div className="relative mb-4 rounded-lg overflow-hidden bg-gray-100 border-2 border-gray-200 aspect-w-16 aspect-h-9">
-            <Webcam
-              ref={webcamRef}
-              audio={false}
-              screenshotFormat="image/jpeg"
-              className="w-full h-full object-cover"
-            />
-            {isLoading && (
-              <div className="absolute inset-0 bg-white bg-opacity-75 flex items-center justify-center">
-                <LoadingSpinner />
-              </div>
-            )}
-          </div>
-
-          {/* Status Indicator */}
-          <div className="mb-4 flex items-center justify-center gap-2">
-            <div
-              className={`w-3 h-3 rounded-full ${
-                modelLoaded
-                  ? multipleFacesDetected
-                    ? "bg-red-500"
-                    : "bg-green-500"
-                  : "bg-gray-500"
-              }`}
-            />
-            <span className="text-sm text-gray-600">
-              {modelLoaded
-                ? multipleFacesDetected
-                  ? "Multiple Faces Detected"
-                  : "DeepID Model Ready"
-                : "Loading Models..."}
-            </span>
-          </div>
-
-          {/* Action Button */}
-          <button
-            onClick={handleAuthenticate}
-            disabled={isLoading || !modelLoaded || multipleFacesDetected}
-            className="w-full py-3 px-6 bg-green-600 hover:bg-green-700 disabled:bg-green-300 
-                     text-white disabled:cursor-not-allowed rounded-xl font-semibold 
-                     transition-colors shadow-lg hover:shadow-xl disabled:shadow-none
-                     flex items-center justify-center gap-2"
-          >
-            {isLoading ? <LoadingSpinner /> : <Camera className="w-5 h-5" />}
-            {isLoading ? "Processing..." : "Authenticate"}
-          </button>
-
-          <div className="mt-4 space-y-3">
-            <div className="flex items-center gap-2 text-green-600">
-              <CheckCircle2 className="w-5 h-5" />
-              <p className="text-sm">
-                Look directly at the camera and stay still
-              </p>
-            </div>
-            <div className="flex items-center gap-2 text-green-600">
-              <CheckCircle2 className="w-5 h-5" />
-              <p className="text-sm">Ensure good lighting on your face</p>
-            </div>
-            <div className="flex items-center gap-2 text-red-600"></div>
-          </div>
-
-          {/* Error Message */}
-          {error && (
-            <div className="mt-4 p-4 bg-red-50 border border-red-200 rounded-lg">
-              <div className="flex gap-3">
-                <AlertCircle className="w-5 h-5 text-red-600" />
-                <p className="text-red-800">{error}</p>
-              </div>
-            </div>
-          )}
-        </div>
+        <Webcam
+          ref={webcamRef}
+          audio={false}
+          screenshotFormat="image/jpeg"
+          className="rounded-lg"
+        />
+        <button
+          onClick={handleAuthenticate}
+          disabled={isLoading || !modelLoaded}
+          className="bg-blue-600 text-white px-4 py-2 mt-4 rounded disabled:bg-blue-300"
+        >
+          {isLoading ? <LoadingSpinner /> : "Authenticate"}
+        </button>
+        {error && <div className="text-red-600 mt-4">{error}</div>}
       </div>
     </div>
   );
