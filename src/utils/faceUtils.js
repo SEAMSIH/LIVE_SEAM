@@ -1,141 +1,124 @@
-import * as tf from '@tensorflow/tfjs';
-import * as blazeface from '@tensorflow-models/blazeface';
-import * as faceLandmarksDetection from '@tensorflow-models/face-landmarks-detection';
-import * as faceapi from 'face-api.js';
+import * as tf from "@tensorflow/tfjs";
+import { LambdaLayer } from "./LambdaLayer"; // Ensure this path is correct
 
-let blazefaceModel = null;
-let landmarksModel = null;
+// Register the custom LambdaLayer class
+tf.serialization.registerClass(LambdaLayer);
 
-export const loadModels = async () => {
+let deepIDModel = null;
+
+/**
+ * Load the DeepID model and clear cache
+ * @returns {Promise<boolean>} - Resolves to true if the model loads successfully, otherwise false
+ */
+export const loadDeepIDModel = async () => {
   try {
-    // Load Blazeface model for quick face detection
-    blazefaceModel = await blazeface.load();
-
-    // Load face-landmarks-detection model for liveness detection
-    landmarksModel = await faceLandmarksDetection.load(
-      faceLandmarksDetection.SupportedPackages.mediapipeFacemesh
-    );
-
-    // Load face-api models for face recognition
-    await Promise.all([
-      faceapi.nets.faceRecognitionNet.loadFromUri('/models'),
-      faceapi.nets.faceLandmark68Net.loadFromUri('/models'),
-      faceapi.nets.ssdMobilenetv1.loadFromUri('/models')
-    ]);
-
+    // Load the DeepID model from the specified path
+    deepIDModel = await tf.loadLayersModel("/public/web_model1/model.json");
+    console.log("DeepID model loaded successfully");
     return true;
   } catch (error) {
-    console.error('Error loading models:', error);
+    console.error("Error loading DeepID model:", error);
     return false;
   }
 };
 
-export const performLivenessDetection = async (imageElement) => {
-  if (!landmarksModel) throw new Error('Landmarks model not loaded');
-
-  const predictions = await landmarksModel.estimateFaces({
-    input: imageElement,
-    predictIrises: true
-  });
-
-  if (predictions.length === 0) {
-    throw new Error('No face detected');
+/**
+ * Generate face descriptor using the DeepID model
+ * @param {HTMLImageElement | HTMLVideoElement | HTMLCanvasElement} inputImage - The input element for prediction
+ * @returns {Promise<number[] | null>} - DeepID face descriptor array or null if an error occurs
+ */
+export const getDeepIDFaceDescriptor = async (inputImage) => {
+  if (!deepIDModel) {
+    throw new Error("DeepID model not loaded");
   }
 
-  // Check for basic liveness indicators
-  const landmarks = predictions[0].scaledMesh;
-  
-  // Calculate eye aspect ratio to detect blinks
-  const leftEyeAspectRatio = calculateEyeAspectRatio(landmarks, 'left');
-  const rightEyeAspectRatio = calculateEyeAspectRatio(landmarks, 'right');
-  
-  // Check if eyes are open (not blinking)
-  const eyesOpen = leftEyeAspectRatio > 0.2 && rightEyeAspectRatio > 0.2;
-  
-  // Check face orientation (should be roughly frontal)
-  const isFrontal = checkFacialOrientation(landmarks);
+  try {
+    // Preprocess the input image
+    const inputTensor = tf.tidy(
+      () =>
+        tf.browser
+          .fromPixels(inputImage)
+          .resizeNearestNeighbor([96, 96]) // Match DeepID input size
+          .toFloat()
+          .expandDims(0)
+          .div(255.0) // Normalize pixel values
+    );
 
-  return eyesOpen && isFrontal;
+    // Perform prediction and return descriptor as array
+    const faceDescriptor = deepIDModel.predict(inputTensor);
+    const descriptorArray = await faceDescriptor.array(); // Convert tensor to JavaScript array
+
+    inputTensor.dispose(); // Clean up memory
+    faceDescriptor.dispose(); // Clean up memory
+
+    return descriptorArray[0]; // Return the first descriptor (flattened array)
+  } catch (error) {
+    console.error("Error generating face descriptor:", error);
+    return null;
+  }
 };
 
-export const findBestMatch = async (imageElement, datasetPath) => {
-  const detection = await faceapi.detectSingleFace(imageElement)
-    .withFaceLandmarks()
-    .withFaceDescriptor();
-
-  if (!detection) {
-    throw new Error('No face detected for matching');
+/**
+ * Compare face descriptors
+ * @param {number[]} descriptor1 - First face descriptor array
+ * @param {number[]} descriptor2 - Second face descriptor array
+ * @returns {number} - Euclidean distance between the descriptors
+ */
+export const compareDescriptors = (descriptor1, descriptor2) => {
+  if (!descriptor1 || !descriptor2) {
+    throw new Error("Descriptors are required for comparison");
   }
 
-  // Load and process dataset images
-  const labeledDescriptors = await loadLabeledImages(datasetPath);
-  const faceMatcher = new faceapi.FaceMatcher(labeledDescriptors);
+  try {
+    // Convert descriptor arrays to tensors
+    const tensor1 = tf.tensor(descriptor1);
+    const tensor2 = tf.tensor(descriptor2);
 
-  // Find best match
-  const bestMatch = faceMatcher.findBestMatch(detection.descriptor);
-  
-  return {
-    label: bestMatch.label,
-    distance: bestMatch.distance
-  };
+    // Calculate Euclidean distance
+    const distance = tf.tidy(() => tf.norm(tensor1.sub(tensor2)).dataSync()[0]);
+
+    tensor1.dispose(); // Clean up memory
+    tensor2.dispose(); // Clean up memory
+
+    console.log("Descriptor distance:", distance);
+    return distance;
+  } catch (error) {
+    console.error("Error comparing descriptors:", error);
+    return Infinity; // Return a large value if comparison fails
+  }
 };
 
-// Helper functions
-const calculateEyeAspectRatio = (landmarks, eye) => {
-  // Simplified eye aspect ratio calculation
-  const eyePoints = eye === 'left' ? 
-    [33, 160, 158, 133, 153, 144] : 
-    [362, 385, 387, 263, 373, 380];
-  
-  const points = eyePoints.map(idx => landmarks[idx]);
-  
-  const height1 = distance(points[1], points[5]);
-  const height2 = distance(points[2], points[4]);
-  const width = distance(points[0], points[3]);
-  
-  return (height1 + height2) / (2.0 * width);
-};
+/**
+ * Check if two images match based on their face descriptors
+ * @param {HTMLImageElement | HTMLVideoElement | HTMLCanvasElement} image1 - First image element
+ * @param {HTMLImageElement | HTMLVideoElement | HTMLCanvasElement} image2 - Second image element
+ * @param {number} threshold - Threshold for matching (default: 0.6)
+ * @returns {Promise<boolean>} - True if the images match, otherwise false
+ */
+export const compareImages = async (image1, image2, threshold = 0.6) => {
+  try {
+    // Generate face descriptors for both images
+    const descriptor1 = await getDeepIDFaceDescriptor(image1);
+    const descriptor2 = await getDeepIDFaceDescriptor(image2);
 
-const checkFacialOrientation = (landmarks) => {
-  // Simplified check for frontal face orientation
-  const nose = landmarks[1];
-  const leftEye = landmarks[33];
-  const rightEye = landmarks[263];
-  
-  const eyeDistance = distance(leftEye, rightEye);
-  const noseOffset = Math.abs(nose[0] - (leftEye[0] + rightEye[0]) / 2);
-  
-  return noseOffset < eyeDistance * 0.2;
-};
-
-const distance = (a, b) => {
-  return Math.sqrt(
-    Math.pow(a[0] - b[0], 2) +
-    Math.pow(a[1] - b[1], 2) +
-    Math.pow(a[2] - b[2], 2)
-  );
-};
-
-const loadLabeledImages = async (datasetPath) => {
-  const labels = ['sarah', 'john', 'emma']; // Example dataset labels
-  const labeledDescriptors = [];
-
-  for (const label of labels) {
-    try {
-      const img = await faceapi.fetchImage(`${datasetPath}/${label}.jpg`);
-      const detection = await faceapi.detectSingleFace(img)
-        .withFaceLandmarks()
-        .withFaceDescriptor();
-
-      if (detection) {
-        labeledDescriptors.push(
-          new faceapi.LabeledFaceDescriptors(label, [detection.descriptor])
-        );
-      }
-    } catch (error) {
-      console.error(`Error loading image for ${label}:`, error);
+    if (!descriptor1 || !descriptor2) {
+      throw new Error("Failed to generate descriptors for one or both images");
     }
-  }
 
-  return labeledDescriptors;
+    // Calculate distance between descriptors
+    const distance = compareDescriptors(descriptor1, descriptor2);
+
+    // Check if distance is below the threshold
+    const isMatch = distance <= threshold;
+    console.log(
+      isMatch
+        ? "Images match! Distance: " + distance
+        : "Images do not match. Distance: " + distance
+    );
+
+    return isMatch;
+  } catch (error) {
+    console.error("Error comparing images:", error);
+    return false;
+  }
 };
