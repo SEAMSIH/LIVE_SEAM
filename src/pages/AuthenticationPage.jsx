@@ -111,7 +111,7 @@ const AuthenticationPage = () => {
       }
 
       // Step 2: Load a dataset image
-      const datasetImagePath = "/public/dataset/3.jpg"; // Change to the desired path
+      const datasetImagePath = "/dataset/3.jpg"; // Change to the desired path
       const datasetImage = new Image();
       datasetImage.src = datasetImagePath;
       await datasetImage.decode();
@@ -128,7 +128,7 @@ const AuthenticationPage = () => {
       const distance = compareDescriptors(userDescriptor, datasetDescriptor);
 
       // Step 4: Verify if the match is within the acceptable threshold
-      if (distance > 200) {
+      if (distance > 300) {
         throw new Error("No matching profile found. Access denied.");
       }
 
