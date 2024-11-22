@@ -1,0 +1,57 @@
+[
+    {
+      "id": "1",
+      "name": "Sarah Johnson",
+      "email": "sarah.johnson@example.com",
+      "phone": "+1 (555) 123-4567",
+      "location": "San Francisco, CA",
+      "department": "Engineering",
+      "image": "/public/dataset/1.jpg"
+    },
+    {
+      "id": "2",
+      "name": "John Doe",
+      "email": "john.doe@example.com",
+      "phone": "+1 (555) 987-6543",
+      "location": "New York, NY",
+      "department": "Marketing",
+      "image": "/public/dataset/1.jpg"
+    },
+    {
+      "id": "3",
+      "name": "Alice Smith",
+      "email": "alice.smith@example.com",
+      "phone": "+1 (555) 654-3210",
+      "location": "Los Angeles, CA",
+      "department": "Finance",
+      "image": "/public/dataset/3.jpg"
+    },
+    {
+      "id": "4",
+      "name": "Abimanys",
+      "email": "alice.smith@example.com",
+      "phone": "+1 (555) 654-3210",
+      "location": "Los Angeles, CA",
+      "department": "Finance",
+      "image": "/public/dataset/1.jpg"
+    },
+    {
+      "id": "5",
+      "name": "depa",
+      "email": "alice.smith@example.com",
+      "phone": "+1 (555) 654-3210",
+      "location": "Los Angeles, CA",
+      "department": "Finance",
+      "image": "/public/dataset/1.jpg"
+    },
+    {
+      "id": "6",
+      "name": "shyu",
+      "email": "alice.smith@example.com",
+      "phone": "+1 (555) 654-3210",
+      "location": "Los Angeles, CA",
+      "department": "Finance",
+      "image": "/public/dataset/1.jpg"
+    }
+  ]
+  
