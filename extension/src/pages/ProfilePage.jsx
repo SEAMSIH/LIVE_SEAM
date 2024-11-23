@@ -11,7 +11,7 @@ const ProfilePage = () => {
     phone: "9943457438",
     location: "Coimbatore,Tamil Nadu",
     department: "Engineering",
-    image: location.state?.image || "/public/dataset/2.jpg",
+    image: location.state?.image || "/public/dataset/3.jpg",
   };
 
   return (
